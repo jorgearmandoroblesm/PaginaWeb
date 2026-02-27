@@ -11,8 +11,10 @@ let state = {
   to: ""
 };
 
+const API_BASE = https://paginaweb-geam.onrender.com;
+
 async function api(path) {
-  const r = await fetch(path);
+  const r = await fetch(API_BASE + path);
   const t = await r.text();
   if (!r.ok) throw new Error(t || "Error API");
   return JSON.parse(t);
