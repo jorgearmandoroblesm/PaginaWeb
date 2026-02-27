@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
 import xlsx from "xlsx";
+import { fileURLToPath } from "url";
 
 import {
   initDb,
@@ -18,38 +19,40 @@ import { parseOrdersFromExcel } from "./excel.js";
 
 dotenv.config();
 
-const app = express(); // ✅ primero creas app
-const PORT = process.env.PORT || 3000;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
+const app = express();
+const db = initDb();
+
+const PORT = process.env.PORT || 3000;
 const ADMIN_KEY = process.env.ADMIN_KEY || "CAMBIAME";
 const CORS_ORIGIN = (process.env.CORS_ORIGIN || "").trim();
 
-const db = initDb();
 let lastImport = null;
 
-// Inbox dentro de /server
-const inboxDir = path.join(process.cwd(), "inbox");
+// Inbox dentro de /server/inbox
+const inboxDir = path.join(__dirname, "inbox");
 if (!fs.existsSync(inboxDir)) fs.mkdirSync(inboxDir, { recursive: true });
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(morgan("dev"));
+app.use(CORS_ORIGIN ? cors({ origin: CORS_ORIGIN }) : cors());
+app.use(express.json({ limit: "2mb" }));
 
-// ✅ CORS (en Render pon CORS_ORIGIN con tu GitHub Pages)
-if (CORS_ORIGIN) app.use(cors({ origin: CORS_ORIGIN }));
-else app.use(cors());
+// ✅ FRONTEND estático desde /web (en la raíz del repo)
+const webDir = path.resolve(__dirname, "../web");
+app.use("/", express.static(webDir, { etag: true, maxAge: "1h" }));
 
-app.use(express.json({ limit: "1mb" }));
+// ✅ Si alguien entra a "/", devolver index.html sí o sí
+app.get("/", (req, res) => {
+  res.sendFile(path.join(webDir, "index.html"));
+});
 
-// (Opcional) Frontend estático si lo sirves desde el mismo backend
-// Si en tu repo el frontend está en /web (a nivel raíz) y Render usa Root Directory=server,
-// entonces ../web existe y esto funciona.
-const webDir = path.resolve(process.cwd(), "../web");
-if (fs.existsSync(webDir)) {
-  app.use("/", express.static(webDir, { etag: true, maxAge: "1h" }));
-}
-
+// Health
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
+// Info pública
 app.get("/api/app/info", (req, res) => {
   res.json({
     ok: true,
@@ -58,10 +61,12 @@ app.get("/api/app/info", (req, res) => {
   });
 });
 
+// Meta
 app.get("/api/orders/meta", (req, res) => {
   res.json({ statuses: distinctStatuses(db) });
 });
 
+// Listado
 app.get("/api/orders", (req, res) => {
   const q = (req.query.q || "").toString().trim();
   const status = (req.query.status || "").toString().trim();
@@ -86,6 +91,7 @@ app.get("/api/orders", (req, res) => {
   res.json({ ...result, page, limit });
 });
 
+// Export
 app.get("/api/orders/export", (req, res) => {
   try {
     const q = (req.query.q || "").toString().trim();
@@ -107,18 +113,18 @@ app.get("/api/orders/export", (req, res) => {
 
     const rows = result.rows.map(r => ({
       "EXP SIAF": r.exp_siaf,
-      "Tipo": r.order_type,
-      "N° Orden": r.order_number,
-      "Fecha": r.issue_date,
-      "Razón Social": r.supplier,
+      "TIPO": r.order_type,
+      "N° ORDEN": r.order_number,
+      "FECHA": r.issue_date,
+      "RAZÓN SOCIAL": r.supplier,
       "RUC": r.supplier_ruc,
-      "Solicitante": r.requester,
-      "Oficina": r.area,
-      "Concepto (detallado)": r.title,
-      "Total": r.amount,
-      "Moneda": r.currency,
-      "Estado": r.status,
-      "Link": r.file_url
+      "SOLICITANTE": r.requester,
+      "OFICINA": r.area,
+      "CONCEPTO (DETALLADO)": r.title,
+      "TOTAL": r.amount,
+      "MONEDA": r.currency,
+      "ESTADO": r.status,
+      "LINK": r.file_url
     }));
 
     const wb = xlsx.utils.book_new();
@@ -126,8 +132,8 @@ app.get("/api/orders/export", (req, res) => {
     xlsx.utils.book_append_sheet(wb, ws, "ORDENES");
 
     const buf = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
-
     const stamp = new Date().toISOString().slice(0, 10);
+
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="ordenes_filtrado_${stamp}.xlsx"`);
     res.send(buf);
@@ -136,6 +142,7 @@ app.get("/api/orders/export", (req, res) => {
   }
 });
 
+// Detalle
 app.get("/api/orders/:id", (req, res) => {
   const id = Number(req.params.id);
   const row = getOrderById(db, id);
@@ -143,6 +150,7 @@ app.get("/api/orders/:id", (req, res) => {
   res.json(row);
 });
 
+// Abrir link
 app.get("/api/orders/:id/open", (req, res) => {
   const id = Number(req.params.id);
   const row = db.prepare("SELECT file_url FROM orders WHERE id = ?").get(id);
@@ -153,6 +161,7 @@ app.get("/api/orders/:id/open", (req, res) => {
   res.redirect(url);
 });
 
+// Admin: inbox lista
 app.get("/api/admin/inbox", (req, res) => {
   const key = (req.headers["x-admin-key"] || "").toString();
   if (key !== ADMIN_KEY) return res.status(401).json({ error: "No autorizado" });
@@ -181,6 +190,7 @@ function latestExcelInInbox() {
   return files[0] || null;
 }
 
+// Admin: importar desde carpeta inbox
 app.post("/api/admin/import-from-folder", (req, res) => {
   try {
     const key = (req.headers["x-admin-key"] || "").toString();
@@ -191,15 +201,11 @@ app.post("/api/admin/import-from-folder", (req, res) => {
       ? { name: requested, full: path.join(inboxDir, requested) }
       : latestExcelInInbox();
 
-    if (
-      requested &&
-      (!fs.existsSync(file.full) ||
-        (!requested.toLowerCase().endsWith(".xlsx") && !requested.toLowerCase().endsWith(".xlsm")))
-    ) {
-      return res.status(400).json({ error: "Archivo inválido en inbox" });
+    if (requested) {
+      const okExt = requested.toLowerCase().endsWith(".xlsx") || requested.toLowerCase().endsWith(".xlsm");
+      if (!okExt || !fs.existsSync(file.full)) return res.status(400).json({ error: "Archivo inválido en inbox" });
     }
-
-    if (!file) return res.status(400).json({ error: "No hay Excel en server/inbox (xlsx/xlsm)" });
+    if (!file) return res.status(400).json({ error: "No hay Excel en server/inbox" });
 
     const rows = parseOrdersFromExcel(file.full);
     replaceOrders(db, rows);
@@ -211,8 +217,9 @@ app.post("/api/admin/import-from-folder", (req, res) => {
   }
 });
 
-// ✅ UN SOLO LISTEN (Render)
+// ✅ ÚNICO listen (así lo necesita Render)
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor listo en puerto ${PORT}`);
+  console.log(`Sirviendo web desde: ${webDir}`);
   console.log(`Inbox: ${inboxDir}`);
 });
