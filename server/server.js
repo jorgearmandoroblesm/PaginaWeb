@@ -7,38 +7,49 @@ import path from "path";
 import dotenv from "dotenv";
 import xlsx from "xlsx";
 
-import { initDb, replaceOrders, queryOrders, distinctStatuses, getOrderById } from "./db.js";
+import {
+  initDb,
+  replaceOrders,
+  queryOrders,
+  distinctStatuses,
+  getOrderById
+} from "./db.js";
 import { parseOrdersFromExcel } from "./excel.js";
 
 dotenv.config();
 
-const PORT = Number(process.env.PORT || 3000);
+const app = express(); // ✅ primero creas app
+const PORT = process.env.PORT || 3000;
+
 const ADMIN_KEY = process.env.ADMIN_KEY || "CAMBIAME";
 const CORS_ORIGIN = (process.env.CORS_ORIGIN || "").trim();
 
-const app = express();
 const db = initDb();
-
 let lastImport = null;
 
+// Inbox dentro de /server
 const inboxDir = path.join(process.cwd(), "inbox");
 if (!fs.existsSync(inboxDir)) fs.mkdirSync(inboxDir, { recursive: true });
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(morgan("dev"));
 
+// ✅ CORS (en Render pon CORS_ORIGIN con tu GitHub Pages)
 if (CORS_ORIGIN) app.use(cors({ origin: CORS_ORIGIN }));
 else app.use(cors());
 
 app.use(express.json({ limit: "1mb" }));
 
-// Frontend estático
+// (Opcional) Frontend estático si lo sirves desde el mismo backend
+// Si en tu repo el frontend está en /web (a nivel raíz) y Render usa Root Directory=server,
+// entonces ../web existe y esto funciona.
 const webDir = path.resolve(process.cwd(), "../web");
-app.use("/", express.static(webDir, { etag: true, maxAge: "1h" }));
+if (fs.existsSync(webDir)) {
+  app.use("/", express.static(webDir, { etag: true, maxAge: "1h" }));
+}
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
-// Info pública (sin datos sensibles)
 app.get("/api/app/info", (req, res) => {
   res.json({
     ok: true,
@@ -75,10 +86,8 @@ app.get("/api/orders", (req, res) => {
   res.json({ ...result, page, limit });
 });
 
-
 app.get("/api/orders/export", (req, res) => {
   try {
-    // mismos filtros que /api/orders (sin paginación)
     const q = (req.query.q || "").toString().trim();
     const status = (req.query.status || "").toString().trim();
     const from = (req.query.from || "").toString().trim();
@@ -118,7 +127,7 @@ app.get("/api/orders/export", (req, res) => {
 
     const buf = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
 
-    const stamp = new Date().toISOString().slice(0,10);
+    const stamp = new Date().toISOString().slice(0, 10);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="ordenes_filtrado_${stamp}.xlsx"`);
     res.send(buf);
@@ -134,7 +143,6 @@ app.get("/api/orders/:id", (req, res) => {
   res.json(row);
 });
 
-// Abrir/descargar: redirige al link (SCRIPT) del Excel
 app.get("/api/orders/:id/open", (req, res) => {
   const id = Number(req.params.id);
   const row = db.prepare("SELECT file_url FROM orders WHERE id = ?").get(id);
@@ -144,7 +152,6 @@ app.get("/api/orders/:id/open", (req, res) => {
   if (!/^https?:\/\//i.test(url)) return res.status(400).send("URL inválida (solo http/https)");
   res.redirect(url);
 });
-
 
 app.get("/api/admin/inbox", (req, res) => {
   const key = (req.headers["x-admin-key"] || "").toString();
@@ -174,17 +181,24 @@ function latestExcelInInbox() {
   return files[0] || null;
 }
 
-// ✅ Admin: importar desde carpeta (NO subir)
 app.post("/api/admin/import-from-folder", (req, res) => {
   try {
     const key = (req.headers["x-admin-key"] || "").toString();
     if (key !== ADMIN_KEY) return res.status(401).json({ error: "No autorizado" });
 
     const requested = (req.query.file || "").toString().trim();
-    const file = requested ? { name: requested, full: path.join(inboxDir, requested) } : latestExcelInInbox();
-    if (requested && (!fs.existsSync(file.full) || (!requested.toLowerCase().endsWith(".xlsx") && !requested.toLowerCase().endsWith(".xlsm")))) {
+    const file = requested
+      ? { name: requested, full: path.join(inboxDir, requested) }
+      : latestExcelInInbox();
+
+    if (
+      requested &&
+      (!fs.existsSync(file.full) ||
+        (!requested.toLowerCase().endsWith(".xlsx") && !requested.toLowerCase().endsWith(".xlsm")))
+    ) {
       return res.status(400).json({ error: "Archivo inválido en inbox" });
     }
+
     if (!file) return res.status(400).json({ error: "No hay Excel en server/inbox (xlsx/xlsm)" });
 
     const rows = parseOrdersFromExcel(file.full);
@@ -197,8 +211,8 @@ app.post("/api/admin/import-from-folder", (req, res) => {
   }
 });
 
-// ✅ Para ver desde otras PCs en la red
+// ✅ UN SOLO LISTEN (Render)
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Servidor listo en http://localhost:${PORT}`);
+  console.log(`Servidor listo en puerto ${PORT}`);
   console.log(`Inbox: ${inboxDir}`);
 });
