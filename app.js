@@ -1,5 +1,15 @@
+// ✅ URL de tu backend (Render)
+const API_BASE = "https://logistica-ordenes.onrender.com";
+
+// Si algún día lo pruebas local (ej. http://localhost:3000)
+// puedes cambiarlo rápido aquí:
+// const API_BASE = "http://localhost:3000";
+
 async function api(path) {
-  const r = await fetch(path, { cache: "no-cache" });
+  // Si te pasan "/api/..." lo convertimos a "https://.../api/..."
+  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+
+  const r = await fetch(url, { cache: "no-cache" });
   if (!r.ok) throw new Error("Error API");
   return r.json();
 }
@@ -18,7 +28,6 @@ function fmtDateTimeEs(value) {
   const mm = pad2(d.getMonth() + 1);
   const yyyy = d.getFullYear();
 
-  // Hora 12h con a.m./p.m.
   let h = d.getHours();
   const ampm = h >= 12 ? "p.m." : "a.m.";
   h = h % 12;
@@ -28,7 +37,6 @@ function fmtDateTimeEs(value) {
   const mi = pad2(d.getMinutes());
   const ss = pad2(d.getSeconds());
 
-  // Fecha larga: "27 de Febrero del 2026"
   const meses = [
     "enero", "febrero", "marzo", "abril", "mayo", "junio",
     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
@@ -37,11 +45,8 @@ function fmtDateTimeEs(value) {
   const mesCap = mes.charAt(0).toUpperCase() + mes.slice(1);
 
   const fechaLarga = `${Number(dd)} de ${mesCap} del ${yyyy}`;
-  const fechaCorta = `${dd}/${mm}/${yyyy}`;
   const hora = `${hh}:${mi}:${ss} ${ampm}`;
 
-  // Formato final pedido:
-  // "27 de Febrero del 2026 - 27/02/2026 - 03:37:44 a.m."
   return `${fechaLarga} - ${hora}`;
 }
 
