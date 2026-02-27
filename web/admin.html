@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin | Logística</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">
+	  <img src="assets/logo.png" alt="Logo">
+        </div>
+        <div class="text">
+          <div class="t1">Logística y Abastecimiento</div>
+	  <div class="t2">Municipalidad Distrital Veintisiete de Noviembre</div>
+        </div>
+      </div>
+      <nav class="nav">
+        <a href="index.html"><div class="badge">🏠</div><span class="label">Inicio</span></a>
+        <a href="ordenes.html"><div class="badge">📄</div><span class="label">Órdenes</span></a>
+        <a href="recursos.html"><div class="badge">🔗</div><span class="label">Recursos</span></a>
+        <a href="admin.html" style="border-color: var(--stroke); background: rgba(255,255,255,.08); color: var(--text);"><div class="badge">🛡️</div><span class="label">Admin</span></a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <div class="container">
+        <header class="topbar">
+          <div class="left">
+            <button class="btn-icon" data-sidebar-toggle title="Ocultar/Mostrar menú">☰</button>
+            <div>
+              <div style="font-weight:900; letter-spacing:.2px">Admin</div>
+              <small>Importación segura desde carpeta</small>
+            </div>
+          </div>
+          <span class="pill">No se suben archivos</span>
+        </header>
+
+        <section class="card">
+          <h2>Importar Excel</h2>
+          <p style="color:var(--muted); margin-top:6px; line-height:1.6;">
+            1) Copia tu Excel (<code>.xlsx</code> o <code>.xlsm</code>) a <code>server/inbox/</code><br/>
+            2) Escribe tu <code>ADMIN_KEY</code><br/>
+            3) Carga la lista y presiona <strong>Importar</strong>
+          </p>
+
+          <div class="grid" style="max-width:680px; margin-top:12px;">
+            <input id="key" placeholder="ADMIN_KEY" autocomplete="off" />
+            <div class="grid" style="grid-template-columns: 1fr auto; gap:10px;">
+              <select id="file"></select>
+              <button id="reload" type="button" style="max-width:180px;">Actualizar lista</button>
+            </div>
+            <button id="btn" type="button">Importar</button>
+
+            <div class="pill" id="info" style="display:none;"></div>
+            <div id="out" style="color:#b9ffd2"></div>
+            <div id="err" style="color:#ffb4b4"></div>
+          </div>
+        </section>
+
+        <div style="height:12px"></div>
+
+        <section class="card">
+          <h2>Última importación</h2>
+          <div class="grid grid-3" style="margin-top:10px;">
+            <div class="kpi"><div class="v" id="li-file">—</div><div class="t">Archivo</div></div>
+            <div class="kpi"><div class="v" id="li-count">—</div><div class="t">Registros</div></div>
+            <div class="kpi"><div class="v" id="li-at">—</div><div class="t">Fecha/Hora</div></div>
+          </div>
+        </section>
+
+      
+        <footer class="footer">
+          <div>© 2026 • Todos los Derechos Reservados</div>
+          <div class="footer-right">Aplicativo creado por <span class="email">JorgeArmandoRoblesM@gmail.com</span></div>
+        </footer>
+</div>
+    </main>
+  </div>
+
+  <script src="layout.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>
