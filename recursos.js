@@ -12,7 +12,7 @@ async function loadLinks(){
   const wrap = document.querySelector("#links");
 
   if(!Array.isArray(links) || links.length === 0){
-    wrap.innerHTML = `<div class="card"><h2>Sin enlaces</h2><p>Edita <code>web/config/links.json</code></p></div>`;
+    wrap.innerHTML = `<div class="card"><h2>Sin enlaces</h2><p>Edita <code>config/links.json</code></p></div>`;
     return;
   }
 
