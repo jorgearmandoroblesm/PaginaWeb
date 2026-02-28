@@ -1,4 +1,4 @@
-# Logística — Municipalidad Distrital Veintisiete de Noviembre (PRO+)
+# Logística — Municipalidad Distrital Veintisiete de Noviembre ()
 
 Panel web para consultar y exportar órdenes importadas desde Excel (hoja **REPORTE**).
 
