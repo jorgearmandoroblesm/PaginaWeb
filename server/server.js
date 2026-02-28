@@ -41,12 +41,12 @@ app.use(CORS_ORIGIN ? cors({ origin: CORS_ORIGIN }) : cors());
 app.use(express.json({ limit: "2mb" }));
 
 /**
- * ✅ FRONTEND estático desde la RAÍZ del repo (ya no /web)
+ * ✅ FRONTEND estático desde la RAÍZ del repo
  * Estructura esperada en la raíz:
  * /assets
  * /config
  * index.html, ordenes.html, recursos.html, admin.html, *.js, styles.css
- * /server (este backend)
+ * /server/server.js
  */
 const publicDir = path.resolve(__dirname, ".."); // raíz del repo
 app.use(express.static(publicDir, { etag: true, maxAge: "1h", index: false }));
