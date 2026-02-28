@@ -59,7 +59,7 @@ Notas:
 
 ## Logo
 Coloca tu logo aquí:
-`web/assets/logo.png`
+`/web/assets/logo.png`
 
 Recomendación:
 - PNG/SVG
