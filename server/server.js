@@ -35,19 +35,26 @@ let lastImport = null;
 const inboxDir = path.join(__dirname, "inbox");
 if (!fs.existsSync(inboxDir)) fs.mkdirSync(inboxDir, { recursive: true });
 
+// Middlewares
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(morgan("dev"));
 app.use(CORS_ORIGIN ? cors({ origin: CORS_ORIGIN }) : cors());
 app.use(express.json({ limit: "2mb" }));
 
-// ✅ FRONTEND estático desde /web (en la raíz del repo)
-const webDir = path.resolve(__dirname, "../web");
-app.use("/", express.static(webDir, { etag: true, maxAge: "1h" }));
+// ✅ FRONTEND estático desde la RAÍZ del repo (ya NO /web)
+const publicDir = path.resolve(__dirname, ".."); // raíz del repo
+app.use(express.static(publicDir, { etag: true, maxAge: "1h", index: false }));
 
-// ✅ Si alguien entra a "/", devolver index.html sí o sí
+// ✅ "/" siempre devuelve index.html de la raíz
 app.get("/", (req, res) => {
-  res.sendFile(path.join(webDir, "index.html"));
+  res.sendFile(path.join(publicDir, "index.html"));
 });
+
+// ✅ (Opcional) si tu app navega con rutas tipo /ordenes /recursos /admin sin .html
+// descomenta esto para que siempre regrese index.html
+// app.get(/^\/(ordenes|recursos|admin)$/, (req, res) => {
+//   res.sendFile(path.join(publicDir, "index.html"));
+// });
 
 // Health
 app.get("/api/health", (req, res) => res.json({ ok: true }));
@@ -217,9 +224,9 @@ app.post("/api/admin/import-from-folder", (req, res) => {
   }
 });
 
-// ✅ ÚNICO listen (así lo necesita Render)
+// ✅ ÚNICO listen (Render)
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor listo en puerto ${PORT}`);
-  console.log(`Sirviendo web desde: ${webDir}`);
+  console.log(`Sirviendo frontend desde: ${publicDir}`);
   console.log(`Inbox: ${inboxDir}`);
 });
