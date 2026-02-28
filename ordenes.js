@@ -11,7 +11,7 @@ let state = {
   to: ""
 };
 
-const API_BASE = https://paginaweb-geam.onrender.com;
+const API_BASE = https://logistica-abastecimiento.onrender.com;
 
 async function api(path) {
   const r = await fetch(API_BASE + path);
