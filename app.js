@@ -1,14 +1,12 @@
-// ✅ URL de tu backend (Render)
-const API_BASE = "https://logistica-ordenes.onrender.com";
-
-// Si algún día lo pruebas local (ej. http://localhost:3000)
-// puedes cambiarlo rápido aquí:
-// const API_BASE = "http://localhost:3000";
+// ✅ Si estás en GitHub Pages, apunta a Render. Si estás en Render, usa la misma URL.
+const API_BASE = (() => {
+  const host = window.location.hostname.toLowerCase();
+  if (host.endsWith("github.io")) return "https://logistica-abastecimiento.onrender.com";
+  return "";
+})();
 
 async function api(path) {
-  // Si te pasan "/api/..." lo convertimos a "https://.../api/..."
-  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
-
+  const url = `${API_BASE}${path}`;
   const r = await fetch(url, { cache: "no-cache" });
   if (!r.ok) throw new Error("Error API");
   return r.json();
