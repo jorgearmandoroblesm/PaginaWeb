@@ -35,26 +35,26 @@ let lastImport = null;
 const inboxDir = path.join(__dirname, "inbox");
 if (!fs.existsSync(inboxDir)) fs.mkdirSync(inboxDir, { recursive: true });
 
-// Middlewares
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(morgan("dev"));
 app.use(CORS_ORIGIN ? cors({ origin: CORS_ORIGIN }) : cors());
 app.use(express.json({ limit: "2mb" }));
 
-// ✅ FRONTEND estático desde la RAÍZ del repo (ya NO /web)
+/**
+ * ✅ FRONTEND estático desde la RAÍZ del repo (ya no /web)
+ * Estructura esperada en la raíz:
+ * /assets
+ * /config
+ * index.html, ordenes.html, recursos.html, admin.html, *.js, styles.css
+ * /server (este backend)
+ */
 const publicDir = path.resolve(__dirname, ".."); // raíz del repo
 app.use(express.static(publicDir, { etag: true, maxAge: "1h", index: false }));
 
-// ✅ "/" siempre devuelve index.html de la raíz
+// ✅ "/" siempre devuelve index.html
 app.get("/", (req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
 });
-
-// ✅ (Opcional) si tu app navega con rutas tipo /ordenes /recursos /admin sin .html
-// descomenta esto para que siempre regrese index.html
-// app.get(/^\/(ordenes|recursos|admin)$/, (req, res) => {
-//   res.sendFile(path.join(publicDir, "index.html"));
-// });
 
 // Health
 app.get("/api/health", (req, res) => res.json({ ok: true }));
