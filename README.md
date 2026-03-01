@@ -1,4 +1,4 @@
-# Logística — Municipalidad Distrital Veintisiete de Noviembre
+# Logística — Municipalidad Distrital Veintisiete de Noviembre (PRO+)
 
 Panel web para consultar y exportar órdenes importadas desde Excel (hoja **REPORTE**).
 
@@ -21,12 +21,19 @@ Panel web para consultar y exportar órdenes importadas desde Excel (hoja **REPO
 - Node.js 18+ (recomendado 20+)
 
 ## Ejecutar en tu PC / servidor
-```bash
+```CMD
 cd server
-cp .env.example .env
-npm.cmd install
-npm.cmd run dev
-```
+copy .env.example .env
+npm install
+npm audit fix
+npm run dev
+
+```PowerShell
+cd server
+Copy-Item .env.example .env
+npm install
+npm audit fix
+npm run dev
 
 Abrir:
 - Inicio: `http://localhost:3000`
@@ -59,7 +66,7 @@ Notas:
 
 ## Logo
 Coloca tu logo aquí:
-`/web/assets/logo.png`
+`web/assets/logo.png`
 
 Recomendación:
 - PNG/SVG
