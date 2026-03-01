@@ -44,15 +44,13 @@ app.get("/api/health", (req, res) => res.json({ ok: true }));
 
 // Info pública (sin datos sensibles)
 app.get("/api/app/info", (req, res) => {
-  const stats = db.prepare("SELECT COUNT(*) AS total_orders, COALESCE(SUM(amount),0) AS total_amount FROM orders").get();
   res.json({
     ok: true,
     last_import: lastImport,
-    server_time: new Date().toISOString(),
-    total_orders: stats?.total_orders ?? 0,
-    total_amount: stats?.total_amount ?? 0
+    server_time: new Date().toISOString()
   });
 });
+
 app.get("/api/orders/meta", (req, res) => {
   res.json({ statuses: distinctStatuses(db) });
 });
@@ -157,30 +155,14 @@ app.get("/api/orders/:id", (req, res) => {
 // Abrir/descargar: redirige al link (SCRIPT) del Excel
 app.get("/api/orders/:id/open", (req, res) => {
   const id = Number(req.params.id);
+  const row = db.prepare("SELECT file_url FROM orders WHERE id = ?").get(id);
+  if (!row || !row.file_url) return res.status(404).send("Sin enlace");
 
-  const row = db
-    .prepare("SELECT COALESCE(NULLIF(TRIM(file_url),''), NULLIF(TRIM(file),'')) AS url FROM orders WHERE id = ?")
-    .get(id);
-
-  if (!row || !row.url) return res.status(404).send("Sin enlace");
-
-  let url = String(row.url).trim().replace(/^"+|"+$/g, "").trim(); // quita "..."
-
-  const extractHttp = (s) => {
-    const m = String(s || "").match(/https?:\/\/[^\s"'<>\)]+/i);
-    return m ? m[0] : "";
-  };
-
-  if (/^www\./i.test(url)) url = "https://" + url;
-  if (!/^https?:\/\//i.test(url)) {
-    const found = extractHttp(url);
-    if (found) url = found;
-  }
+  const url = row.file_url.trim();
   if (!/^https?:\/\//i.test(url)) return res.status(400).send("URL inválida (solo http/https)");
-
-  // Redirección “raw” (evita re-encode de res.redirect)
-  res.status(302).set("Location", url).end();
+  res.redirect(url);
 });
+
 
 app.get("/api/admin/inbox", (req, res) => {
   const key = (req.headers["x-admin-key"] || "").toString();
