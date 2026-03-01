@@ -6,74 +6,57 @@ import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
 import xlsx from "xlsx";
-import { fileURLToPath } from "url";
 
-import {
-  initDb,
-  replaceOrders,
-  queryOrders,
-  distinctStatuses,
-  getOrderById
-} from "./db.js";
+import { initDb, replaceOrders, queryOrders, distinctStatuses, getOrderById } from "./db.js";
 import { parseOrdersFromExcel } from "./excel.js";
 
-dotenv.config();
-
+// Cargar .env siempre desde la carpeta server (aunque se ejecute desde otra ruta)
+import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, ".env") });
+
+const PORT = Number(process.env.PORT || 3000);
+const ADMIN_KEY = process.env.ADMIN_KEY || "CAMBIAME";
+const CORS_ORIGIN = (process.env.CORS_ORIGIN || "").trim();
 
 const app = express();
 const db = initDb();
 
-const PORT = process.env.PORT || 3000;
-const ADMIN_KEY = process.env.ADMIN_KEY || "CAMBIAME";
-const CORS_ORIGIN = (process.env.CORS_ORIGIN || "").trim();
-
 let lastImport = null;
 
-// Inbox dentro de /server/inbox
-const inboxDir = path.join(__dirname, "inbox");
+const inboxDir = path.join(process.cwd(), "inbox");
 if (!fs.existsSync(inboxDir)) fs.mkdirSync(inboxDir, { recursive: true });
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(morgan("dev"));
-app.use(CORS_ORIGIN ? cors({ origin: CORS_ORIGIN }) : cors());
-app.use(express.json({ limit: "2mb" }));
 
-/**
- * ✅ FRONTEND estático desde la RAÍZ del repo
- * Estructura esperada en la raíz:
- * /assets
- * /config
- * index.html, ordenes.html, recursos.html, admin.html, *.js, styles.css
- * /server/server.js
- */
-const publicDir = path.resolve(__dirname, ".."); // raíz del repo
-app.use(express.static(publicDir, { etag: true, maxAge: "1h", index: false }));
+if (CORS_ORIGIN) app.use(cors({ origin: CORS_ORIGIN }));
+else app.use(cors());
 
-// ✅ "/" siempre devuelve index.html
-app.get("/", (req, res) => {
-  res.sendFile(path.join(publicDir, "index.html"));
-});
+app.use(express.json({ limit: "1mb" }));
 
-// Health
+// Frontend estático
+const webDir = path.resolve(process.cwd(), "../web");
+app.use("/", express.static(webDir, { etag: true, maxAge: "1h" }));
+
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
-// Info pública
+// Info pública (sin datos sensibles)
 app.get("/api/app/info", (req, res) => {
+  const stats = db.prepare("SELECT COUNT(*) AS total_orders, COALESCE(SUM(amount),0) AS total_amount FROM orders").get();
   res.json({
     ok: true,
     last_import: lastImport,
-    server_time: new Date().toISOString()
+    server_time: new Date().toISOString(),
+    total_orders: stats?.total_orders ?? 0,
+    total_amount: stats?.total_amount ?? 0
   });
 });
-
-// Meta
 app.get("/api/orders/meta", (req, res) => {
   res.json({ statuses: distinctStatuses(db) });
 });
 
-// Listado
 app.get("/api/orders", (req, res) => {
   const q = (req.query.q || "").toString().trim();
   const status = (req.query.status || "").toString().trim();
@@ -85,6 +68,9 @@ app.get("/api/orders", (req, res) => {
   const order_number = (req.query.order_number || "").toString().trim();
   const supplier = (req.query.supplier || "").toString().trim();
 
+  const sort = (req.query.sort || "").toString().trim();
+  const dir = (req.query.dir || "desc").toString().trim();
+
   const limit = Math.min(200, Math.max(5, Number(req.query.limit || 20)));
   const page = Math.max(1, Number(req.query.page || 1));
   const offset = (page - 1) * limit;
@@ -92,15 +78,23 @@ app.get("/api/orders", (req, res) => {
   const result = queryOrders(db, {
     q, status, from, to,
     exp_siaf, order_type, order_number, supplier,
+    sort, dir,
     limit, offset
   });
+  // Normaliza campo de archivo para el frontend (Excel suele traerlo como file_url)
+  result.rows = (result.rows || []).map(r => ({
+    ...r,
+    file: (r.file ?? r.file_url ?? "").toString().trim()
+  }));
+
 
   res.json({ ...result, page, limit });
 });
 
-// Export
+
 app.get("/api/orders/export", (req, res) => {
   try {
+    // mismos filtros que /api/orders (sin paginación)
     const q = (req.query.q || "").toString().trim();
     const status = (req.query.status || "").toString().trim();
     const from = (req.query.from || "").toString().trim();
@@ -111,27 +105,31 @@ app.get("/api/orders/export", (req, res) => {
     const order_number = (req.query.order_number || "").toString().trim();
     const supplier = (req.query.supplier || "").toString().trim();
 
+    const sort = (req.query.sort || "").toString().trim();
+    const dir = (req.query.dir || "desc").toString().trim();
+
     const result = queryOrders(db, {
       q, status, from, to,
       exp_siaf, order_type, order_number, supplier,
+      sort, dir,
       limit: 20000,
       offset: 0
     });
 
     const rows = result.rows.map(r => ({
       "EXP SIAF": r.exp_siaf,
-      "TIPO": r.order_type,
-      "N° ORDEN": r.order_number,
-      "FECHA": r.issue_date,
-      "RAZÓN SOCIAL": r.supplier,
+      "Tipo": r.order_type,
+      "N° Orden": r.order_number,
+      "Fecha": r.issue_date,
+      "Razón Social": r.supplier,
       "RUC": r.supplier_ruc,
-      "SOLICITANTE": r.requester,
-      "OFICINA": r.area,
-      "CONCEPTO (DETALLADO)": r.title,
-      "TOTAL": r.amount,
-      "MONEDA": r.currency,
-      "ESTADO": r.status,
-      "LINK": r.file_url
+      "Solicitante": r.requester,
+      "Oficina": r.area,
+      "Concepto (detallado)": r.title,
+      "Total": r.amount,
+      "Moneda": r.currency,
+      "Estado": r.status,
+      "Link": r.file_url
     }));
 
     const wb = xlsx.utils.book_new();
@@ -139,8 +137,8 @@ app.get("/api/orders/export", (req, res) => {
     xlsx.utils.book_append_sheet(wb, ws, "ORDENES");
 
     const buf = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
-    const stamp = new Date().toISOString().slice(0, 10);
 
+    const stamp = new Date().toISOString().slice(0,10);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="ordenes_filtrado_${stamp}.xlsx"`);
     res.send(buf);
@@ -149,26 +147,41 @@ app.get("/api/orders/export", (req, res) => {
   }
 });
 
-// Detalle
 app.get("/api/orders/:id", (req, res) => {
   const id = Number(req.params.id);
   const row = getOrderById(db, id);
   if (!row) return res.status(404).json({ error: "No encontrado" });
-  res.json(row);
+  res.json({ ...row, file: (row.file ?? row.file_url ?? "").toString().trim() });
 });
 
-// Abrir link
+// Abrir/descargar: redirige al link (SCRIPT) del Excel
 app.get("/api/orders/:id/open", (req, res) => {
   const id = Number(req.params.id);
-  const row = db.prepare("SELECT file_url FROM orders WHERE id = ?").get(id);
-  if (!row || !row.file_url) return res.status(404).send("Sin enlace");
 
-  const url = row.file_url.trim();
+  const row = db
+    .prepare("SELECT COALESCE(NULLIF(TRIM(file_url),''), NULLIF(TRIM(file),'')) AS url FROM orders WHERE id = ?")
+    .get(id);
+
+  if (!row || !row.url) return res.status(404).send("Sin enlace");
+
+  let url = String(row.url).trim().replace(/^"+|"+$/g, "").trim(); // quita "..."
+
+  const extractHttp = (s) => {
+    const m = String(s || "").match(/https?:\/\/[^\s"'<>\)]+/i);
+    return m ? m[0] : "";
+  };
+
+  if (/^www\./i.test(url)) url = "https://" + url;
+  if (!/^https?:\/\//i.test(url)) {
+    const found = extractHttp(url);
+    if (found) url = found;
+  }
   if (!/^https?:\/\//i.test(url)) return res.status(400).send("URL inválida (solo http/https)");
-  res.redirect(url);
+
+  // Redirección “raw” (evita re-encode de res.redirect)
+  res.status(302).set("Location", url).end();
 });
 
-// Admin: inbox lista
 app.get("/api/admin/inbox", (req, res) => {
   const key = (req.headers["x-admin-key"] || "").toString();
   if (key !== ADMIN_KEY) return res.status(401).json({ error: "No autorizado" });
@@ -197,22 +210,18 @@ function latestExcelInInbox() {
   return files[0] || null;
 }
 
-// Admin: importar desde carpeta inbox
+// ✅ Admin: importar desde carpeta (NO subir)
 app.post("/api/admin/import-from-folder", (req, res) => {
   try {
     const key = (req.headers["x-admin-key"] || "").toString();
     if (key !== ADMIN_KEY) return res.status(401).json({ error: "No autorizado" });
 
     const requested = (req.query.file || "").toString().trim();
-    const file = requested
-      ? { name: requested, full: path.join(inboxDir, requested) }
-      : latestExcelInInbox();
-
-    if (requested) {
-      const okExt = requested.toLowerCase().endsWith(".xlsx") || requested.toLowerCase().endsWith(".xlsm");
-      if (!okExt || !fs.existsSync(file.full)) return res.status(400).json({ error: "Archivo inválido en inbox" });
+    const file = requested ? { name: requested, full: path.join(inboxDir, requested) } : latestExcelInInbox();
+    if (requested && (!fs.existsSync(file.full) || (!requested.toLowerCase().endsWith(".xlsx") && !requested.toLowerCase().endsWith(".xlsm")))) {
+      return res.status(400).json({ error: "Archivo inválido en inbox" });
     }
-    if (!file) return res.status(400).json({ error: "No hay Excel en server/inbox" });
+    if (!file) return res.status(400).json({ error: "No hay Excel en server/inbox (xlsx/xlsm)" });
 
     const rows = parseOrdersFromExcel(file.full);
     replaceOrders(db, rows);
@@ -224,9 +233,8 @@ app.post("/api/admin/import-from-folder", (req, res) => {
   }
 });
 
-// ✅ ÚNICO listen (Render)
+// ✅ Para ver desde otras PCs en la red
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Servidor listo en puerto ${PORT}`);
-  console.log(`Sirviendo frontend desde: ${publicDir}`);
+  console.log(`Servidor listo en http://localhost:${PORT}`);
   console.log(`Inbox: ${inboxDir}`);
 });
