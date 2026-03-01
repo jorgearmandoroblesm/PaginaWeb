@@ -12,19 +12,21 @@
     <aside class="sidebar">
       <div class="brand">
         <div class="logo">
-	  <img src="/web/assets/logo.png" alt="Logo">
+          <img src="assets/logo.png" alt="Logo">
         </div>
         <div class="text">
           <div class="t1">Logística y Abastecimiento</div>
-	  <div class="t2">Municipalidad Distrital Veintisiete de Noviembre</div>
+          <div class="t2">Municipalidad Distrital Veintisiete de Noviembre</div>
         </div>
       </div>
+
       <nav class="nav">
         <a href="index.html"><div class="badge">🏠</div><span class="label">Inicio</span></a>
         <a href="ordenes.html" style="border-color: var(--stroke); background: rgba(255,255,255,.08); color: var(--text);"><div class="badge">📄</div><span class="label">Órdenes</span></a>
         <a href="recursos.html"><div class="badge">🔗</div><span class="label">Recursos</span></a>
         <a href="admin.html"><div class="badge">🛡️</div><span class="label">Admin</span></a>
       </nav>
+      <!-- El bloque Fecha/Hora + Monto lo inyecta layout.js automáticamente -->
     </aside>
 
     <main class="main">
@@ -32,6 +34,7 @@
         <header class="topbar">
           <div class="left">
             <button class="btn-icon" data-sidebar-toggle title="Ocultar/Mostrar menú">☰</button>
+            <button class="btn-icon" data-filters-toggle title="Ocultar/Mostrar filtros">⟷</button>
             <div>
               <div style="font-weight:900; letter-spacing:.2px">Órdenes</div>
               <small>Filtros, detalle y exportación</small>
@@ -42,101 +45,86 @@
           </div>
         </header>
 
-        <section class="card">
-          <h2>Filtros</h2>
-
-          <div class="controls">
-            <input id="exp_siaf" placeholder="EXP SIAF" />
-            <select id="order_type">
-  			<option value="">TIPO DE ORDEN (todos)</option>
-  			<option value="O/C">ORDEN DE COMPRA</option>
-  			<option value="O/S">ORDEN DE SERVICIO</option>
-	    </select>
-            <input id="order_number" placeholder="N° DE ORDEN" />
-            <input id="supplier" placeholder="Razón Social / RUC" />
-            <select id="status"></select>
-            <input id="q" placeholder="Búsqueda general" />
-            <input id="from" type="date" />
-            <input id="to" type="date" />
-            <select id="limit">
-              <option value="20">20 por página</option>
-              <option value="50">50 por página</option>
-              <option value="100">100 por página</option>
-            </select>
-            <div class="actions actions-inline">
-              <button class="btn btn-primary" id="buscar">Aplicar</button>
-              <button class="btn btn-ghost" id="limpiar" type="button">Limpiar</button>
-              <button class="btn btn-ghost" id="export" type="button">Exportar</button>
+        <div class="orders-layout">
+          <aside class="filters-panel card" id="filtersPanel">
+            <div class="filters-head">
+              <h2 style="margin:0">Filtros</h2>
+              <button class="btn-icon" id="filtersToggle" title="Ocultar/Mostrar filtros">⟷</button>
             </div>
-          </div>
-          <div id="error" style="display:none;color:#ffb4b4; margin-top:10px;"></div>
 
-        </section>
+            <div class="controls controls-vertical">
+              <input id="exp_siaf" placeholder="EXP SIAF" />
+              <select id="order_type">
+                <option value="">TIPO DE ORDEN (todos)</option>
+                <option value="O/C">ORDEN DE COMPRA</option>
+                <option value="O/S">ORDEN DE SERVICIO</option>
+              </select>
+              <input id="order_number" placeholder="N° DE ORDEN" />
+              <input id="supplier" placeholder="Razón Social / RUC" />
+              <select id="status"></select>
+              <input id="q" placeholder="Búsqueda general" />
+              <label class="mini-label" for="from">Desde</label>
+              <input id="from" type="date" />
+              <label class="mini-label" for="to">Hasta</label>
+              <input id="to" type="date" />
 
-        <div style="height:12px"></div>
+              <select id="limit">
+                <option value="20">20 por página</option>
+                <option value="50">50 por página</option>
+                <option value="100">100 por página</option>
+              </select>
 
-        <section class="card orders-list-card">
-          <div class="listado-header">
- 	    <h2>Listado</h2>
-
-  	    <div class="pager pager-inline" id="pagerTop">
-    		<button id="prevTop" class="pager-btn">← Anterior</button>
-
-    		<div class="pill page-pill" id="pageinfoTop">Página 1 / 1</div>
-
-    		<div class="pager-go">
-      		  <input id="gotoTop" type="number" min="1" placeholder="N°" />
-      		  <button id="gotoBtnTop" type="button" class="pager-btn small">Ir</button>
-    		</div>
-	
-    		<button id="nextTop" class="pager-btn">Siguiente →</button>
-  	    </div>
-	</div>
-
-          <div class="tablewrap orders-tablewrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Exp. SIAF</th>
-                  <th>Tipo</th>
-                  <th>N° Orden</th>
-                  <th>Fecha</th>
-                  <th>Razón Social</th>
-                  <th>Oficina</th>
-                  <th>Total</th>
-                  <th>Estado</th>
-                  <th>Archivo</th>
-                </tr>
-              </thead>
-              <tbody id="tbody"></tbody>
-            </table>
-          </div>
-
-          <div class="pager">
-            <button id="prev" class="pager-btn">← Anterior</button>
-
-	    <div class="pill page-pill" id="pageinfo">Página 1 de 10</div>
-            <div class="pager-go">
-              <input id="goto" type="number" min="1" placeholder="N°" />
-              <button id="gotoBtn" type="button" class="pager-btn small">Ir</button>
+              <div class="actions actions-vertical">
+                <button class="btn btn-primary" id="buscar">Aplicar</button>
+                <button class="btn btn-ghost" id="limpiar" type="button">Limpiar</button>
+                <button class="btn btn-ghost" id="export" type="button">Exportar</button>
+              </div>
             </div>
-            <button id="next" class="pager-btn">Siguiente →</button>
-          </div>
 
-        </section>
+            <div id="error" style="display:none;color:#ffb4b4; margin-top:10px;"></div>
+          </aside>
 
-      
+          <section class="card orders-list-card">
+            <div class="listado-header">
+              <h2>Listado</h2>
+
+              <div class="pager pager-inline" id="pagerTop">
+                <button id="prevTop" class="pager-btn">← Anterior</button>
+
+                <div class="pill page-pill" id="pageinfoTop">Página 1 / 1</div>
+
+                <div class="pager-go">
+                  <input id="gotoTop" type="number" min="1" placeholder="N°" />
+                  <button id="gotoBtnTop" type="button" class="pager-btn small">Ir</button>
+                </div>
+
+                <button id="nextTop" class="pager-btn">Siguiente →</button>
+              </div>
+            </div>
+
+            <div class="tablewrap orders-tablewrap">
+              <table>
+                <thead>
+                  <tr id="theadRow"></tr>
+                </thead>
+                <tbody id="tbody"></tbody>
+              </table>
+            </div>
+
+          </section>
+        </div>
+
         <footer class="footer">
           <div>© 2026 • Todos los Derechos Reservados</div>
           <div class="footer-right">Aplicativo creado por <span class="email">JorgeArmandoRoblesM@gmail.com</span></div>
         </footer>
-</div>
+      </div>
     </main>
   </div>
 
   <!-- Modal detalle -->
-  <div id="modalBack" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:50; align-items:center; justify-content:center; padding:18px;">
-    <div style="width:min(980px, 96vw); max-height:86vh; overflow:auto;" class="card modal">
+  <div id="modalBack" class="modal-backdrop">
+    <div class="modal">
       <div id="modalBody"></div>
     </div>
   </div>
