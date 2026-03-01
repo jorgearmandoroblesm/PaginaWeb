@@ -1,557 +1,511 @@
-let state = {
-  page: 1,
-  limit: 20,
-  exp_siaf: "",
-  order_type: "",
-  order_number: "",
-  supplier: "",
-  status: "",
-  q: "",
-  from: "",
-  to: ""
-};
+// Órdenes: filtros + ordenamiento + paginación + export + detalle (PRO)
+(function () {
+  const COLS = [
+    { key: "exp_siaf", label: "Exp. SIAF", sort: "exp_siaf", minWidth: 90 },
+    { key: "order_type", label: "Tipo", sort: "order_type", minWidth: 70 },
+    { key: "order_number", label: "N° Orden", sort: "order_number", minWidth: 95 },
+    { key: "issue_date", label: "Fecha", sort: "issue_date", minWidth: 105 },
+    { key: "supplier", label: "Razón Social", sort: "supplier", minWidth: 260 },
+    { key: "area", label: "Oficina", sort: "area", minWidth: 240 },
+    { key: "amount", label: "Total", sort: "amount", minWidth: 120, align: "right" },
+    { key: "status", label: "Estado", sort: "status", minWidth: 90, align: "center" },
+    { key: "file", label: "Archivo", sort: null, minWidth: 110, align: "center" },
+  ];
 
-const API_BASE = https://logistica-abastecimiento.onrender.com;
+  const state = {
+    page: 1,
+    limit: 20,
+    sort: "issue_date",
+    dir: "desc",
+  };
 
-async function api(path) {
-  const r = await fetch(API_BASE + path);
-  const t = await r.text();
-  if (!r.ok) throw new Error(t || "Error API");
-  return JSON.parse(t);
-}
+  const $ = (sel) => document.querySelector(sel);
 
-function qs(params) {
-  const u = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== "" && v != null) u.set(k, v);
+  async function apiJSON(path) {
+    const r = await fetch(path, { cache: "no-cache" });
+    const txt = await r.text();
+    if (!r.ok) throw new Error(txt || "Error API");
+    return JSON.parse(txt);
   }
-  return u.toString();
-}
 
-function esc(s) {
-  return String(s ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
+  function esc(s) {
+    return String(s ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+  }
 
-function money(n) {
-  if (n == null || n === "") return "—";
-  const num = Number(n);
-  if (!Number.isFinite(num)) return "—";
-  return num.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+  function money(n) {
+    const num = Number(n);
+    if (!Number.isFinite(num)) return "—";
+    return num.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
 
-/** Devuelve símbolo monetario para mostrar ANTES del monto */
-function currencySymbol(code) {
-  const c = String(code || "").trim().toUpperCase();
-  if (c === "PEN") return "S/";
-  if (c === "USD") return "$";
-  if (c === "EUR") return "€";
-  return c || "";
-}
+  function fmtDateEs(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("es-PE", { year: "numeric", month: "2-digit", day: "2-digit" });
+  }
 
-/* ============================
-   TOTAL EN LETRAS (ES)
-============================ */
-function currencyName(code, amountInt) {
-  const c = String(code || "").trim().toUpperCase();
-  if (c === "PEN") return amountInt === 1 ? "sol" : "soles";
-  if (c === "USD") return amountInt === 1 ? "dólar" : "dólares";
-  if (c === "EUR") return amountInt === 1 ? "euro" : "euros";
-  return amountInt === 1 ? "unidad" : "unidades";
-}
-
-function capitalizeFirst(s) {
-  s = String(s || "");
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
-}
-
-function toMasculineUn(words) {
-  // "uno" -> "un" cuando va antes de moneda (sol/es, dólar/es...)
-  return String(words || "")
-    .replace(/veintiuno$/i, "veintiún")
-    .replace(/ y uno$/i, " y un")
-    .replace(/uno$/i, "un");
-}
-
-function numberToSpanishWords(n) {
-  n = Math.floor(Math.abs(Number(n) || 0));
-
-  const U = ["cero","uno","dos","tres","cuatro","cinco","seis","siete","ocho","nueve"];
-  const E = ["diez","once","doce","trece","catorce","quince","dieciséis","diecisiete","dieciocho","diecinueve"];
-  const D = ["","", "veinte","treinta","cuarenta","cincuenta","sesenta","setenta","ochenta","noventa"];
-  const C = ["","ciento","doscientos","trescientos","cuatrocientos","quinientos","seiscientos","setecientos","ochocientos","novecientos"];
-
-  function tensToWords(x) {
-    if (x < 10) return U[x];
-    if (x < 20) return E[x - 10];
-    if (x < 30) {
-      if (x === 20) return "veinte";
-      const v = x - 20;
-      if (v === 2) return "veintidós";
-      if (v === 3) return "veintitrés";
-      if (v === 6) return "veintiséis";
-      return "veinti" + U[v];
+  function setError(msg) {
+    const el = $("#error");
+    if (!el) return;
+    if (!msg) {
+      el.style.display = "none";
+      el.textContent = "";
+      return;
     }
-    const ten = Math.floor(x / 10);
-    const unit = x % 10;
-    if (unit === 0) return D[ten];
-    return `${D[ten]} y ${U[unit]}`;
+    el.style.display = "block";
+    el.textContent = msg;
   }
 
-  function hundredsToWords(x) {
-    if (x === 0) return "";
-    if (x === 100) return "cien";
-    if (x < 100) return tensToWords(x);
-    const h = Math.floor(x / 100);
-    const r = x % 100;
-    const head = C[h];
-    if (r === 0) return head;
-    return `${head} ${tensToWords(r)}`;
+  function getFilters() {
+    return {
+      exp_siaf: $("#exp_siaf")?.value?.trim() || "",
+      order_type: $("#order_type")?.value?.trim() || "",
+      order_number: $("#order_number")?.value?.trim() || "",
+      supplier: $("#supplier")?.value?.trim() || "",
+      status: $("#status")?.value?.trim() || "",
+      q: $("#q")?.value?.trim() || "",
+      from: $("#from")?.value?.trim() || "",
+      to: $("#to")?.value?.trim() || "",
+      limit: Number($("#limit")?.value || state.limit),
+    };
   }
 
-  function chunkToWords(x) {
-    return hundredsToWords(x).trim(); // 0..999
+  function buildQuery() {
+    const f = getFilters();
+    state.limit = f.limit || state.limit;
+
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(f)) {
+      if (v !== "" && v != null && k !== "limit") p.set(k, v);
+    }
+    p.set("page", String(state.page));
+    p.set("limit", String(state.limit));
+    p.set("sort", state.sort);
+    p.set("dir", state.dir);
+    return p.toString();
   }
 
-  if (n === 0) return "cero";
+  function renderHead() {
+    const tr = $("#theadRow");
+    if (!tr) return;
+    tr.innerHTML = "";
 
-  const millones = Math.floor(n / 1_000_000);
-  const miles = Math.floor((n % 1_000_000) / 1_000);
-  const cientos = n % 1_000;
+    for (const c of COLS) {
+      const th = document.createElement("th");
+      if (c.minWidth) th.style.minWidth = `${c.minWidth}px`;
+      if (c.align) th.style.textAlign = c.align;
 
-  const parts = [];
+      const clickable = !!c.sort;
+      const isActive = clickable && state.sort === c.sort;
+      const arrow = isActive ? (state.dir === "asc" ? "↑" : "↓") : "↕";
 
-  if (millones > 0) {
-    if (millones === 1) parts.push("un millón");
-    else parts.push(`${toMasculineUn(numberToSpanishWords(millones))} millones`);
+      th.innerHTML = `<span class="th-label">${esc(c.label)}</span>${clickable ? `<span class="th-arrow">${arrow}</span>` : ""}`;
+
+      if (clickable) {
+        th.classList.add("th-sort");
+        th.title = "Ordenar";
+        th.addEventListener("click", () => {
+          if (state.sort === c.sort) state.dir = state.dir === "asc" ? "desc" : "asc";
+          else { state.sort = c.sort; state.dir = "asc"; }
+          state.page = 1;
+          renderHead();
+          load();
+        });
+      }
+      tr.appendChild(th);
+    }
   }
 
-  if (miles > 0) {
-    if (miles === 1) parts.push("mil");
-    else parts.push(`${toMasculineUn(chunkToWords(miles))} mil`);
+  function hasAnyLink(raw) {
+    const s = String(raw ?? "").trim();
+    if (!s || s === "—" || s === "-" || s === "0") return false;
+    // si viene fórmula o texto, igual intentamos abrir vía /open
+    if (/https?:\/\//i.test(s) || /\bwww\./i.test(s)) return true;
+    if (/HYPERLINK\(|CONCATENATE\(|&/i.test(s)) return true;
+    return s.length >= 6;
   }
 
-  if (cientos > 0) {
-    parts.push(chunkToWords(cientos));
+  
+  function fitTablewrap() {
+    const wrap = document.querySelector(".orders-tablewrap");
+    if (!wrap) return;
+    const rect = wrap.getBoundingClientRect();
+    const pad = 22; // margen inferior visual
+    const h = Math.max(260, Math.floor(window.innerHeight - rect.top - pad));
+    wrap.style.height = h + "px";
+    wrap.style.maxHeight = h + "px";
   }
 
-  return parts.join(" ").replace(/\s+/g, " ").trim();
-}
+function renderRows(rows) {
+    const tb = $("#tbody");
+    if (!tb) return;
+    tb.innerHTML = "";
 
-function amountToCurrencyWords(amount, currencyCode) {
-  const num = Number(amount);
-  if (!Number.isFinite(num)) return "—";
+    for (const r of rows) {
+      const tr = document.createElement("tr");
 
-  const fixed = num.toFixed(2); // evita errores flotantes
-  const [intStr, decStr] = fixed.split(".");
-  const intVal = Math.abs(parseInt(intStr, 10)) || 0;
-  const cents = decStr || "00";
+      for (const c of COLS) {
+        const td = document.createElement("td");
+        if (c.align) td.style.textAlign = c.align;
 
-  let words = numberToSpanishWords(intVal);
-  words = toMasculineUn(words);
-
-  const curName = currencyName(currencyCode, intVal);
-  return `${capitalizeFirst(words)} con ${cents}/100 ${curName}`.toUpperCase();
-}
-
-// modal
-function openModal(html) {
-  const back = document.querySelector("#modalBack");
-  document.querySelector("#modalBody").innerHTML = html;
-  back.style.display = "flex";
-}
-function closeModal() {
-  document.querySelector("#modalBack").style.display = "none";
-}
-
-async function loadMeta() {
-  const meta = await api("/api/orders/meta");
-
-  const sel = document.querySelector("#status");
-  if (sel) {
-    sel.innerHTML =
-      `<option value="">Estado (todos)</option>` +
-      meta.statuses.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
-  }
-}
-
-function shortStatus(full) {
-  const s = String(full || "").trim().toUpperCase();
-  if (!s) return "—";
-  if (s.startsWith("COMPROM")) return "C";
-  if (s.startsWith("DEVENG")) return "D";
-  if (s.startsWith("ANUL")) return "A";
-  return s[0];
-}
-
-async function loadOrders() {
-  const url = `/api/orders?${qs({
-    page: state.page,
-    limit: state.limit,
-    exp_siaf: state.exp_siaf,
-    order_type: state.order_type,
-    order_number: state.order_number,
-    supplier: state.supplier,
-    status: state.status,
-    q: state.q,
-    from: state.from,
-    to: state.to
-  })}`;
-
-  const tableWrap = document.querySelector(".orders-tablewrap");
-  tableWrap?.classList.add("is-loading");
-
-  try {
-    const data = await api(url);
-    const tbody = document.querySelector("#tbody");
-    if (!tbody) return;
-
-    tbody.innerHTML = data.rows.map(o => {
-      const sym = currencySymbol(o.currency || "PEN");
-      const totalTxt = `${sym} ${money(o.amount)}`;
-
-      const supplierName = esc(o.supplier || "—");
-      const supplierRuc = esc(o.supplier_ruc || "—");
-      const supplierHtml = `
-        <div class="data-stack" title="${supplierName} · RUC: ${supplierRuc}">
-          <div class="data-primary clamp">${supplierName}</div>
-          <div class="data-secondary clamp">RUC: ${supplierRuc}</div>
-        </div>
-      `;
-
-      const requesterName = esc(o.requester || "—");
-      const requesterArea = esc(o.area || "—");
-      const officeHtml = `
-        <div class="data-stack" title="${requesterName} · ${requesterArea}">
-          <div class="data-primary clamp">${requesterName}</div>
-          <div class="data-secondary clamp">${requesterArea}</div>
-        </div>
-      `;
-
-      const openBtn = o.file_url
-        ? `<a class="pill" href="/api/orders/${o.id}/open" target="_blank" rel="noopener">Ver PDF</a>`
-        : `<span class="pill">Sin link</span>`;
-
-      const statusFull = String(o.status || "—");
-      const statusSmall = shortStatus(statusFull);
-
-      return `
-        <tr class="clickable" data-id="${o.id}">
-          <td>${esc(o.exp_siaf || "")}</td>
-          <td>${esc(o.order_type || "")}</td>
-          <td>${esc(o.order_number || "")}</td>
-          <td>${esc(o.issue_date || "")}</td>
-          <td class="wrap">${supplierHtml}</td>
-          <td class="wrap">${officeHtml}</td>
-          <td>${totalTxt}</td>
-          <td style="text-align:center; min-width:56px;">
-            <span class="status" title="${esc(statusFull)}">${esc(statusSmall)}</span>
-          </td>
-          <td>${openBtn}</td>
-        </tr>
-      `;
-    }).join("");
-
-    // click fila -> detalle
-    tbody.querySelectorAll("tr[data-id]").forEach(tr => {
-      tr.addEventListener("click", async (ev) => {
-        if (ev.target && ev.target.closest("a")) return;
-
-        const id = tr.getAttribute("data-id");
-        const o = await api(`/api/orders/${id}`);
-        const sym = currencySymbol(o.currency || "PEN");
-        const totalLetras = amountToCurrencyWords(o.amount, o.currency || "PEN");
-
-        openModal(`
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-            <div>
-              <div style="font-weight:900; font-size:18px;">Detalle de orden</div>
-              <div class="pill" style="margin-top:6px;">${esc(o.order_code || "—")}</div>
+        if (c.key === "issue_date") {
+          td.textContent = fmtDateEs(r.issue_date);
+        } else if (c.key === "amount") {
+          td.textContent = money(r.amount);
+        } else if (c.key === "supplier") {
+          const name = String(r.supplier ?? "").trim() || "—";
+          const ruc = String(r.supplier_ruc ?? "").trim();
+          td.innerHTML = `
+            <div class="data-stack">
+              <div class="data-primary clamp" title="${esc(name)}">${esc(name)}</div>
+              <div class="data-secondary clamp" title="${esc(ruc ? `RUC: ${ruc}` : "")}">${esc(ruc ? `RUC: ${ruc}` : "")}</div>
             </div>
-            <button type="button" id="modalClose" class="btn-icon" title="Cerrar">✕</button>
+          `;
+        } else if (c.key === "area") {
+          const requester = String(r.requester ?? "").trim();
+          const area = String(r.area ?? "").trim() || "—";
+          td.innerHTML = `
+            <div class="data-stack">
+              <div class="data-primary clamp" title="${esc(requester || "")}">${esc(requester || "")}</div>
+              <div class="data-secondary clamp" title="${esc(area)}">${esc(area)}</div>
+            </div>
+          `;
+        } else if (c.key === "status") {
+          const full = String(r.status ?? "").trim();
+          const short = full ? full[0].toUpperCase() : "—";
+          td.textContent = short;
+          td.classList.add("status-cell");
+          td.title = full || "—";
+        } else if (c.key === "file") {
+          const raw = r.file ?? r.file_url ?? "";
+          if (hasAnyLink(raw)) {
+            const href = `/api/orders/${encodeURIComponent(r.id)}/open`;
+            td.innerHTML = `<a class="pill" href="${esc(href)}" target="_blank" rel="noopener">Ver PDF</a>`;
+            const a = td.querySelector("a");
+            if (a) a.addEventListener("click", (ev) => ev.stopPropagation());
+          } else {
+            td.textContent = "—";
+          }
+        } else {
+          const v = r[c.key];
+          td.textContent = v == null || v === "" ? "—" : String(v);
+        }
+
+        tr.appendChild(td);
+      }
+
+      tr.addEventListener("click", async () => {
+        try {
+          const j = await apiJSON(`/api/orders/${encodeURIComponent(r.id)}`);
+          openModal(j);
+        } catch (e) {
+          setError(String(e?.message || e));
+        }
+      });
+
+      tb.appendChild(tr);
+    }
+  }
+
+  function setTotals(sum_amount) {
+    const val = Number.isFinite(Number(sum_amount)) ? `S/ ${money(sum_amount)}` : "—";
+
+    const top = $("#suminfo");
+    if (top) top.textContent = `Total: ${val === "—" ? "—" : val}`;
+
+    // Sidebar principal (inyectado por layout.js)
+    const side = $("#sidebarTotal");
+    if (side && val !== "—") side.textContent = val;
+  }
+
+  function setPager(total, page, limit) {
+    const pages = Math.max(1, Math.ceil((total || 0) / (limit || 1)));
+    const infoTop = $("#pageinfoTop");
+    if (infoTop) infoTop.textContent = `Página ${page} / ${pages}`;
+
+    const prevTop = $("#prevTop"), nextTop = $("#nextTop");
+    const disPrev = page <= 1;
+    const disNext = page >= pages;
+
+    if (prevTop) prevTop.disabled = disPrev;
+    if (nextTop) nextTop.disabled = disNext;
+  }
+
+  function openModal(order) {
+    const back = $("#modalBack");
+    const body = $("#modalBody");
+    if (!back || !body) return;
+
+    const typeCode = String(order.order_type || "").trim().toUpperCase();
+    const typeLong =
+      typeCode === "O/C" || typeCode === "OC" ? "Orden de Compra" :
+      typeCode === "O/S" || typeCode === "OS" ? "Orden de Servicio" :
+      (typeCode || "—");
+
+    const status = String(order.status || "—").trim();
+    const statusSlug = status
+      .toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+
+    const exp = order.exp_siaf ?? "—";
+    const nro = order.order_number ?? "—";
+    const fecha = fmtDateEs(order.issue_date);
+
+    const dateObj = order.issue_date ? new Date(order.issue_date) : null;
+    const year = dateObj && !isNaN(dateObj.getTime()) ? String(dateObj.getFullYear()) : "—";
+
+    // formatea el N° a 3 dígitos si es numérico
+    const nro3 = (() => {
+      const n = String(nro ?? "").trim();
+      const num = Number(n);
+      if (Number.isFinite(num)) return String(num).padStart(3, "0");
+      return n || "—";
+    })();
+
+    const supplier = order.supplier ?? "—";
+    const ruc = order.supplier_ruc ?? "—";
+    const requester = order.requester ?? "—";
+    const area = order.area ?? "—";
+    const concept = order.title ?? "—";
+    const notes = order.notes ?? "—";
+
+    const totalTxt = `S/ ${money(order.amount)}`;
+
+    const hasId = Number.isFinite(Number(order.id));
+    const pdfHref = hasId ? `/api/orders/${Number(order.id)}/open` : "";
+    const fileBtn = hasId
+      ? `<a class="pill pill-strong" href="${esc(pdfHref)}" target="_blank" rel="noopener">Ver PDF</a>`
+      : `<span class="pill">—</span>`;
+
+    const copyBtn = (val, label) => {
+      const v = (val == null ? "" : String(val)).trim();
+      if (!v || v === "—" || v === "-") return "";
+      return `<button class="copy-btn" type="button" data-copy="${encodeURIComponent(v)}" title="Copiar ${esc(label)}">⧉ Copiar</button>`;
+    };
+
+    const updatedAt = order.updated_at ? new Date(order.updated_at) : null;
+    const updatedTxt = updatedAt && !isNaN(updatedAt.getTime())
+      ? updatedAt.toLocaleString("es-PE", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:true })
+      : "—";
+
+    body.innerHTML = `
+      <div class="modal-head">
+        <div>
+          <h2 class="modal-title">${esc(typeLong.toUpperCase())} N° ${esc(nro3)} - ${esc(year)}</h2>
+          <div class="modal-meta">
+            <span class="chip">Exp. SIAF: <b>${esc(exp)}</b></span>
+            <span class="chip">Tipo: <b>${esc(typeLong)}</b> <span style="color:var(--muted)">(${esc(typeCode || "—")})</span></span>
+            <span class="chip">Fecha: <b>${esc(fecha)}</b></span>
+            <span class="chip chip-status status-${esc(statusSlug)}">Estado: <b>${esc(status)}</b></span>
+            <span class="chip">Total: <b>${esc(totalTxt)}</b></span>
           </div>
+        </div>
+        <button class="btn btn-ghost" id="closeModalBtn" type="button">Cerrar</button>
+      </div>
 
-          <div style="height:16px"></div>
-
-          <div class="row row-compact">
-
-            <div class="kv">
-              <div class="k">EXP SIAF</div>
-              <div class="v mono">${esc(o.exp_siaf || "—")}</div>
+      <div class="modal-grid">
+        <div class="row">
+          <div class="kv">
+            <div class="kv-head">
+              <div class="k">Razón Social</div>
+              ${copyBtn(supplier, "Razón Social")}
             </div>
-
-            <div class="kv">
-              <div class="k">N° ORDEN</div>
-              <div class="v mono">${esc(o.order_number || "—")}</div>
-            </div>
-
-            <div class="kv">
-              <div class="k">TIPO</div>
-              <div class="v mono">${esc(o.order_type || "—")}</div>
-            </div>
-
-            <div class="kv">
-              <div class="k">FECHA</div>
-              <div class="v mono">${esc(o.issue_date || "—")}</div>
-            </div>
-
-            <div class="kv span-2">
-              <div class="k">RAZÓN SOCIAL</div>
-              <div class="v">${esc(o.supplier || "—")}</div>
-            </div>
-
-            <div class="kv">
+            <div class="v">${esc(supplier)}</div>
+            <div class="kv-split"></div>
+            <div class="kv-head">
               <div class="k">RUC</div>
-              <div class="v mono">${esc(o.supplier_ruc || "—")}</div>
+              ${copyBtn(ruc, "RUC")}
             </div>
-
-            <div class="kv">
-              <div class="k">ESTADO</div>
-              <div class="v mono">${esc(o.status || "—")}</div>
-            </div>
-
-            <div class="kv span-2">
-              <div class="k">SOLICITANTE</div>
-              <div class="v">${esc(o.requester || "—")}</div>
-            </div>
-
-            <div class="kv span-2">
-              <div class="k">OFICINA</div>
-              <div class="v">${esc(o.area || "—")}</div>
-            </div>
-
-            <div class="kv span-4">
-              <div class="k">CONCEPTO (DETALLADO)</div>
-              <div class="v">${esc(o.title || "—")}</div>
-            </div>
-
-            <div class="kv">
-              <div class="k">TOTAL</div>
-              <div class="v mono">${sym} ${money(o.amount)}</div>
-            </div>
-
-            <div class="kv span-3">
-              <div class="k">TOTAL EN LETRAS</div>
-              <div class="v">${esc(totalLetras)}</div>
-            </div>
-
+            <div class="v">${esc(ruc)}</div>
           </div>
 
-          <div style="height:16px"></div>
-          <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            ${o.file_url ? `<a class="pill" href="/api/orders/${o.id}/open" target="_blank" rel="noopener">Ver PDF</a>` : `<span class="pill">Sin link</span>`}
+          <div class="kv">
+            <div class="kv-head">
+              <div class="k">Solicitante</div>
+              ${copyBtn(requester, "Solicitante")}
+            </div>
+            <div class="v">${esc(requester)}</div>
+            <div class="kv-split"></div>
+            <div class="kv-head">
+              <div class="k">Oficina solicitante</div>
+              ${copyBtn(area, "Oficina")}
+            </div>
+            <div class="v">${esc(area)}</div>
           </div>
-        `);
+        </div>
 
-        document.querySelector("#modalClose")?.addEventListener("click", closeModal);
+        <div class="kv">
+          <div class="kv-head">
+            <div class="k">Concepto (detallado)</div>
+            ${copyBtn(concept, "Concepto")}
+          </div>
+          <div class="v">${esc(concept)}</div>
+        </div>
+
+        <div class="kv">
+          <div class="kv-head">
+            <div class="k">Observaciones</div>
+            ${copyBtn(notes, "Observaciones")}
+          </div>
+          <div class="v">${esc(notes)}</div>
+        </div>
+
+        <div class="row">
+          <div class="kv">
+            <div class="k">Estado</div>
+            <div class="v">${esc(status)}</div>
+            <div class="kv-split"></div>
+            <div class="k">Actualizado</div>
+            <div class="v">${esc(updatedTxt)}</div>
+          </div>
+
+          <div class="kv">
+            <div class="k">Total</div>
+            <div class="v big">${esc(totalTxt)}</div>
+            <div class="kv-split"></div>
+            <div class="k">Archivo</div>
+            <div class="v">${fileBtn}</div>
+          </div>
+        </div>
+
+        <details class="modal-more">
+          <summary>Más información</summary>
+          <div class="more-grid">
+            <div class="kv">
+              <div class="k">ID</div>
+              <div class="v">${esc(order.id ?? "—")}</div>
+            </div>
+            <div class="kv">
+              <div class="k">Código</div>
+              <div class="v">${esc(order.order_code ?? "—")}</div>
+            </div>
+            <div class="kv">
+              <div class="k">Moneda</div>
+              <div class="v">${esc(order.currency ?? "—")}</div>
+            </div>
+            <div class="kv">
+              <div class="k">Fila</div>
+              <div class="v">${esc(order.source_row ?? "—")}</div>
+            </div>
+          </div>
+        </details>
+      </div>
+    `;
+
+    // copiar (delegación)
+    body.querySelectorAll("[data-copy]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const raw = btn.getAttribute("data-copy") || "";
+        const val = decodeURIComponent(raw);
+        try {
+          await navigator.clipboard.writeText(val);
+          btn.textContent = "✓ Copiado";
+          setTimeout(() => (btn.textContent = "⧉ Copiar"), 900);
+        } catch {
+          // fallback
+          window.prompt("Copia:", val);
+        }
       });
     });
 
-    const totalPages = Math.max(1, Math.ceil(data.total / data.limit));
-
-    // Page info (abajo + arriba)
-    const pageinfo = document.querySelector("#pageinfo");
-    const pageinfoTop = document.querySelector("#pageinfoTop");
-    const infoTxt = `Página ${data.page} / ${totalPages} • Registros: ${data.total}`;
-    if (pageinfo) pageinfo.textContent = infoTxt;
-    if (pageinfoTop) pageinfoTop.textContent = infoTxt;
-
-    // Total filtrado
-    const sumInfo = document.querySelector("#suminfo");
-    const cur = (data.rows?.[0]?.currency) || "PEN";
-    if (sumInfo) sumInfo.textContent = `Total: ${currencySymbol(cur)} ${money(data.sum_amount)}`;
-
-    // Botones prev/next (abajo + arriba)
-    const prev = document.querySelector("#prev");
-    const next = document.querySelector("#next");
-    const prevTop = document.querySelector("#prevTop");
-    const nextTop = document.querySelector("#nextTop");
-
-    const disablePrev = data.page <= 1;
-    const disableNext = data.page >= totalPages;
-
-    if (prev) prev.disabled = disablePrev;
-    if (next) next.disabled = disableNext;
-    if (prevTop) prevTop.disabled = disablePrev;
-    if (nextTop) nextTop.disabled = disableNext;
-
-    state.page = data.page;
-
-    // goto (abajo + arriba)
-    const goto = document.querySelector("#goto");
-    const gotoTop = document.querySelector("#gotoTop");
-
-    if (goto) {
-      goto.value = String(data.page);
-      goto.max = String(totalPages);
-    }
-    if (gotoTop) {
-      gotoTop.value = String(data.page);
-      gotoTop.max = String(totalPages);
-    }
-
-    if (tableWrap) tableWrap.scrollTop = 0;
-  } finally {
-    tableWrap?.classList.remove("is-loading");
+    back.style.display = "flex";
+    $("#closeModalBtn")?.addEventListener("click", closeModal);
+    back.addEventListener("click", (ev) => { if (ev.target === back) closeModal(); }, { once: true });
   }
-}
 
-function showErr(e) {
-  const box = document.querySelector("#error");
-  if (!box) return;
-  box.textContent = String(e?.message || e);
-  box.style.display = "block";
-}
+  function closeModal() {
+    const back = $("#modalBack");
+    if (back) back.style.display = "none";
+  }
 
-function applyFilters() {
-  const $ = (id) => document.querySelector(id);
-  state.exp_siaf = $("#exp_siaf").value.trim();
-  state.order_type = $("#order_type").value.trim();
-  state.order_number = $("#order_number").value.trim();
-  state.supplier = $("#supplier").value.trim();
-  state.status = $("#status").value;
-  state.q = $("#q").value.trim();
-  state.from = $("#from").value;
-  state.to = $("#to").value;
-  state.limit = Number($("#limit").value || 20);
-  state.page = 1;
-  loadOrders().catch(showErr);
-}
+  async function load() {
+    try {
+      setError("");
+      renderHead();
 
-function bind() {
-  const $ = (id) => document.querySelector(id);
+      const q = buildQuery();
+      const j = await apiJSON(`/api/orders?${q}`);
 
-  const applyFilters = () => {
-    state.exp_siaf = $("#exp_siaf")?.value?.trim() || "";
-    state.order_type = $("#order_type")?.value?.trim() || "";
-    state.order_number = $("#order_number")?.value?.trim() || "";
-    state.supplier = $("#supplier")?.value?.trim() || "";
-    state.status = $("#status")?.value || "";
-    state.q = $("#q")?.value?.trim() || "";
-    state.from = $("#from")?.value || "";
-    state.to = $("#to")?.value || "";
-    state.limit = Number($("#limit")?.value || 20);
-    state.page = 1;
-    loadOrders().catch(showErr);
-  };
-
-  $("#buscar")?.addEventListener("click", applyFilters);
-
-  $("#limpiar")?.addEventListener("click", () => {
-    if ($("#exp_siaf")) $("#exp_siaf").value = "";
-    if ($("#order_type")) $("#order_type").value = "";
-    if ($("#order_number")) $("#order_number").value = "";
-    if ($("#supplier")) $("#supplier").value = "";
-    if ($("#status")) $("#status").value = "";
-    if ($("#q")) $("#q").value = "";
-    if ($("#from")) $("#from").value = "";
-    if ($("#to")) $("#to").value = "";
-    if ($("#limit")) $("#limit").value = "20";
-
-    state = { page: 1, limit: 20, exp_siaf:"", order_type:"", order_number:"", supplier:"", status:"", q:"", from:"", to:"" };
-    loadOrders().catch(showErr);
-  });
-
-  // Pager abajo
-  $("#prev")?.addEventListener("click", () => {
-    state.page = Math.max(1, state.page - 1);
-    loadOrders().catch(showErr);
-  });
-
-  $("#next")?.addEventListener("click", () => {
-    state.page += 1;
-    loadOrders().catch(showErr);
-  });
-
-  $("#gotoBtn")?.addEventListener("click", () => {
-    const max = Number($("#goto")?.max || 1);
-    const n = Math.max(1, Math.min(max || 1, Number($("#goto")?.value || 1)));
-    state.page = n;
-    loadOrders().catch(showErr);
-  });
-
-  $("#goto")?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      $("#gotoBtn")?.click();
+      renderRows(j.rows || []);
+      setTotals(j.sum_amount);
+      setPager(j.total || 0, j.page || state.page, j.limit || state.limit);
+    } catch (e) {
+      setError(String(e?.message || e));
     }
-  });
+  }
 
-  // Pager arriba
-  $("#prevTop")?.addEventListener("click", () => {
-    state.page = Math.max(1, state.page - 1);
-    loadOrders().catch(showErr);
-  });
+  function hookUI() {
+    $("#buscar")?.addEventListener("click", () => { state.page = 1; load(); });
 
-  $("#nextTop")?.addEventListener("click", () => {
-    state.page += 1;
-    loadOrders().catch(showErr);
-  });
+    $("#limpiar")?.addEventListener("click", () => {
+      ["#exp_siaf","#order_type","#order_number","#supplier","#status","#q","#from","#to"].forEach(id => {
+        const el = $(id); if (el) el.value = "";
+      });
+      state.page = 1;
+      load();
+    });
 
-  $("#gotoBtnTop")?.addEventListener("click", () => {
-    const max = Number($("#gotoTop")?.max || 1);
-    const n = Math.max(1, Math.min(max || 1, Number($("#gotoTop")?.value || 1)));
-    state.page = n;
-    loadOrders().catch(showErr);
-  });
+    $("#export")?.addEventListener("click", () => {
+      const q = buildQuery();
+      window.location.href = `/api/orders/export?${q}`;
+    });
 
-  $("#gotoTop")?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      $("#gotoBtnTop")?.click();
-    }
-  });
+    $("#prevTop")?.addEventListener("click", () => { if (state.page > 1) { state.page--; load(); } });
+    $("#nextTop")?.addEventListener("click", () => { state.page++; load(); });
 
-  $("#export")?.addEventListener("click", () => {
-    const url = `/api/orders/export?${qs({
-      exp_siaf: state.exp_siaf,
-      order_type: state.order_type,
-      order_number: state.order_number,
-      supplier: state.supplier,
-      status: state.status,
-      q: state.q,
-      from: state.from,
-      to: state.to
-    })}`;
-    window.open(url, "_blank", "noopener");
-  });
+    $("#gotoBtnTop")?.addEventListener("click", () => {
+      const n = Number($("#gotoTop")?.value || "");
+      if (Number.isFinite(n) && n >= 1) { state.page = n; load(); }
+    });
 
-  // ENTER = aplicar filtros
-  const applyOnEnter = (el) => {
-    if (!el) return;
-    el.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        $("#buscar")?.click();
+    // Enter para buscar
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "SELECT")) {
+        state.page = 1;
+        load();
       }
     });
-  };
 
-  ["#exp_siaf", "#order_type", "#order_number", "#supplier", "#status", "#q", "#from", "#to", "#limit"]
-    .forEach(sel => applyOnEnter(document.querySelector(sel)));
+    // Auto-aplicar con pausa (siempre activo, sin checkbox)
+    const debounceApply = (() => {
+      let t = null;
+      return () => {
+        clearTimeout(t);
+        t = setTimeout(() => { state.page = 1; load(); }, 450);
+      };
+    })();
 
-  // cerrar modal
-  document.querySelector("#modalBack")?.addEventListener("click", (e) => {
-    if (e.target && e.target.id === "modalBack") closeModal();
-  });
-  window.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
-
-  // Enter aplica filtros en cualquier input/select del panel
-  document.querySelectorAll(".controls input, .controls select").forEach(el => {
-    el.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        applyFilters();
-      }
+    ["#exp_siaf","#order_type","#order_number","#supplier","#status","#q","#from","#to","#limit"].forEach(id => {
+      const el = $(id);
+      if (!el) return;
+      el.addEventListener("input", debounceApply);
+      el.addEventListener("change", debounceApply);
     });
-  });
-}
+  }
 
-document.addEventListener("DOMContentLoaded", async () => {
-  bind();
-  try { await loadMeta(); } catch {}
-  try { await loadOrders(); } catch (e) { showErr(e); }
-});
+  async function loadMeta() {
+    try {
+      const j = await apiJSON("/api/orders/meta");
+      const sel = $("#status");
+      if (sel) {
+        sel.innerHTML = `<option value="">Estado (todos)</option>` +
+          (j.statuses || []).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
+      }
+    } catch {}
+  }
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    await loadMeta();
+    hookUI();
+    fitTablewrap();
+    window.addEventListener("resize", fitTablewrap);
+    load();
+  });
+})();
