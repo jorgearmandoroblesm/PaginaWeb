@@ -1,10 +1,61 @@
 function $(sel) { return document.querySelector(sel); }
 
+function setAlert(kind, message, extra = "") {
+  const el = $("#err");
+  const out = $("#out");
+  if (kind === "ok") {
+    el.innerHTML = "";
+    out.innerHTML = `<div class="alert alert-ok">${escapeHtml(message)}</div>`;
+    return;
+  }
+  out.innerHTML = "";
+  const hint = extra ? `<div class="alert-extra">${escapeHtml(extra)}</div>` : "";
+  el.innerHTML = `<div class="alert alert-error"><div class="alert-title">${escapeHtml(message)}</div>${hint}</div>`;
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function handleError(e) {
+  const status = e?.status;
+  const msg = String(e?.message || "Error");
+
+  if (status === 401) {
+    setAlert("err", "No autorizado: ADMIN_KEY incorrecta.", "Revisa tu clave y que el servidor cargue server/.env. Luego reinicia el servidor.");
+    return;
+  }
+  setAlert("err", msg);
+}
+
+
 async function api(path, opts = {}) {
   const r = await fetch(path, opts);
-  const t = await r.text();
-  if (!r.ok) throw new Error(t || "Error API");
-  return JSON.parse(t);
+  const raw = await r.text();
+
+  // Intentar JSON si aplica
+  let data = null;
+  try { data = raw ? JSON.parse(raw) : null; } catch (_) {}
+
+  if (!r.ok) {
+    // Errores bonitos y útiles
+    const msg =
+      (data && (data.error || data.message)) ||
+      (raw && raw.trim()) ||
+      `Error ${r.status}`;
+
+    const err = new Error(msg);
+    err.status = r.status;
+    err.data = data;
+    throw err;
+  }
+
+  return data ?? {};
 }
 
 function fmtBytes(n) {
@@ -13,7 +64,9 @@ function fmtBytes(n) {
   const units = ["B","KB","MB","GB"];
   let i = 0, v = num;
   while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-  
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
 function fmtDateTimeEs(value) {
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return "—";
@@ -38,12 +91,9 @@ function fmtDateTimeEs(value) {
   return `${dd}/${mm}/${yyyy} ${hh}:${mi}:${ss} ${ampm} (${fechaLarga})`;
 }
 
-return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
-
 async function loadInbox() {
-  const key = $("#key").value.trim();
-  if (!key) throw new Error("Ingresa la clave ADMIN_KEY");
+  const key = ($("#key").value || "").trim();
+  if (!key) throw new Error("Ingresa la clave ADMIN_KEY (está en server/.env)");
 
   const res = await api("/api/admin/inbox", { headers: { "x-admin-key": key } });
   const files = res.files || [];
@@ -65,8 +115,8 @@ async function loadInbox() {
 }
 
 async function importSelected() {
-  const key = $("#key").value.trim();
-  if (!key) throw new Error("Ingresa la clave ADMIN_KEY");
+  const key = ($("#key").value || "").trim();
+  if (!key) throw new Error("Ingresa la clave ADMIN_KEY (está en server/.env)");
 
   const file = $("#file").value;
   if (!file) throw new Error("No hay archivo seleccionado");
@@ -93,25 +143,26 @@ async function loadLastImport() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  $("#out").textContent = "";
-  $("#err").textContent = "";
+  $("#out").innerHTML = "";
+  $("#err").innerHTML = "";
 
   $("#reload").addEventListener("click", async () => {
-    $("#out").textContent = "";
-    $("#err").textContent = "";
+    $("#out").innerHTML = "";
+    $("#err").innerHTML = "";
     try { await loadInbox(); }
-    catch (e) { $("#err").textContent = String(e?.message || e); }
+    catch (e) { handleError(e); }
   });
 
   $("#btn").addEventListener("click", async () => {
-    $("#out").textContent = "";
-    $("#err").textContent = "";
+    $("#out").innerHTML = "";
+    $("#err").innerHTML = "";
     try {
       const res = await importSelected();
-      $("#out").textContent = `Importación OK ✅  Registros: ${res.imported}  (Archivo: ${res.file})`;
+      setAlert("ok", `Importación OK ✅  Registros: ${res.imported}  (Archivo: ${res.file})`);
       await loadLastImport();
+      await loadInbox();
     } catch (e) {
-      $("#err").textContent = String(e?.message || e);
+      handleError(e);
     }
   });
 
