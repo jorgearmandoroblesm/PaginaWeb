@@ -1,13 +1,5 @@
-// ✅ Si estás en GitHub Pages, apunta a Render. Si estás en Render, usa la misma URL.
-const API_BASE = (() => {
-  const host = window.location.hostname.toLowerCase();
-  if (host.endsWith("github.io")) return "https://logistica-abastecimiento.onrender.com";
-  return "";
-})();
-
 async function api(path) {
-  const url = `${API_BASE}${path}`;
-  const r = await fetch(url, { cache: "no-cache" });
+  const r = await fetch(path, { cache: "no-cache" });
   if (!r.ok) throw new Error("Error API");
   return r.json();
 }
@@ -26,6 +18,7 @@ function fmtDateTimeEs(value) {
   const mm = pad2(d.getMonth() + 1);
   const yyyy = d.getFullYear();
 
+  // Hora 12h con a.m./p.m.
   let h = d.getHours();
   const ampm = h >= 12 ? "p.m." : "a.m.";
   h = h % 12;
@@ -35,6 +28,7 @@ function fmtDateTimeEs(value) {
   const mi = pad2(d.getMinutes());
   const ss = pad2(d.getSeconds());
 
+  // Fecha larga: "27 de Febrero del 2026"
   const meses = [
     "enero", "febrero", "marzo", "abril", "mayo", "junio",
     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
@@ -43,8 +37,11 @@ function fmtDateTimeEs(value) {
   const mesCap = mes.charAt(0).toUpperCase() + mes.slice(1);
 
   const fechaLarga = `${Number(dd)} de ${mesCap} del ${yyyy}`;
+  const fechaCorta = `${dd}/${mm}/${yyyy}`;
   const hora = `${hh}:${mi}:${ss} ${ampm}`;
 
+  // Formato final pedido:
+  // "27 de Febrero del 2026 - 27/02/2026 - 03:37:44 a.m."
   return `${fechaLarga} - ${hora}`;
 }
 
