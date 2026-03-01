@@ -121,7 +121,11 @@ export function replaceOrders(db, rows) {
 }
 
 export function queryOrders(db, f) {
-  const { exp_siaf, order_type, order_number, supplier, q, status, from, to, limit, offset } = f;
+  const {
+    exp_siaf, order_type, order_number, supplier, q, status, from, to,
+    limit, offset,
+    sort = "", dir = "desc"
+  } = f;
 
   const where = [];
   const params = {};
@@ -153,19 +157,82 @@ export function queryOrders(db, f) {
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   const stats = db.prepare(`SELECT COUNT(*) AS c, COALESCE(SUM(amount),0) AS sum_amount FROM orders ${whereSql}`).get(params);
-
   const total = stats.c;
   const sum_amount = stats.sum_amount;
+
+  // Ordenamiento seguro (whitelist) + multi-orden (Shift+Click en el frontend)
+  const SORT_MAP = {
+    exp_siaf: "exp_siaf",
+    order_type: "order_type",
+    order_number: "order_number",
+    issue_date: "issue_date",
+    supplier: "supplier",
+    area: "area",
+    amount: "amount",
+    status: "status",
+    updated_at: "updated_at",
+    id: "id"
+  };
+
+  function normalizeSortSpec(sortRaw, dirRaw) {
+    const raw = String(sortRaw || "").trim();
+    const legacyDir = String(dirRaw || "desc").toLowerCase() === "asc" ? "ASC" : "DESC";
+
+    // Soporta:
+    // - "issue_date" + dir="desc"
+    // - "issue_date,-amount,exp_siaf"
+    // - "issue_date:desc,amount:asc"
+    if (!raw) return [];
+
+    const parts = raw.split(",").map(s => s.trim()).filter(Boolean);
+    const spec = [];
+
+    // caso legacy simple: sort=col & dir=asc|desc
+    if (parts.length === 1 && !parts[0].includes(":") && !/^[+-]/.test(parts[0])) {
+      const key = parts[0];
+      if (SORT_MAP[key]) spec.push({ col: SORT_MAP[key], dir: legacyDir, key });
+      return spec;
+    }
+
+    for (const p of parts) {
+      let token = p;
+      let dir = "ASC";
+
+      if (token.includes(":")) {
+        const [k, d] = token.split(":").map(s => s.trim());
+        token = k;
+        dir = (String(d || "").toLowerCase() === "desc") ? "DESC" : "ASC";
+      } else if (token.startsWith("-")) {
+        dir = "DESC";
+        token = token.slice(1).trim();
+      } else if (token.startsWith("+")) {
+        dir = "ASC";
+        token = token.slice(1).trim();
+      }
+
+      if (SORT_MAP[token]) spec.push({ col: SORT_MAP[token], dir, key: token });
+    }
+
+    return spec.slice(0, 5); // límite razonable
+  }
+
+  const sortSpec = normalizeSortSpec(sort, dir);
+
+  const orderBy = (sortSpec.length
+    ? `ORDER BY ${sortSpec.map(s => `(${s.col} IS NULL OR ${s.col} = ''), ${s.col} ${s.dir}`).join(", ")}, id DESC`
+    : `ORDER BY (issue_date IS NULL OR issue_date = ''), issue_date DESC, id DESC`
+  );
 
   const rows = db.prepare(`
     SELECT * FROM orders
     ${whereSql}
-    ORDER BY (issue_date IS NULL OR issue_date = ''), issue_date DESC, id DESC
+    ${orderBy}
     LIMIT @limit OFFSET @offset
   `).all({ ...params, limit, offset });
 
   return { total, sum_amount, rows };
 }
+
 
 export function distinctStatuses(db) {
   return db.prepare(`
